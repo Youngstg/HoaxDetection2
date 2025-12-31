@@ -1,0 +1,14 @@
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+pydantic==2.5.3
+python-dotenv==1.0.0
+firebase-admin==6.4.0
+feedparser==6.0.11
+requests==2.31.0
+beautifulsoup4==4.12.3
+lxml==5.1.0
+transformers==4.36.2
+torch==2.1.2
+sentencepiece==0.1.99
+accelerate==0.26.1
+python-multipart==0.0.6
