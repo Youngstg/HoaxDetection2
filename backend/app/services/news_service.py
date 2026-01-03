@@ -86,8 +86,8 @@ class NewsService:
             if not content:
                 content = article.get("summary", "")
 
-            # Perform hoax detection
-            prediction = hoax_detector.predict(content)
+            # Perform hoax detection with source info
+            prediction = hoax_detector.predict(content, source=article["link"])
 
             # Create news item
             news_item = NewsItem(

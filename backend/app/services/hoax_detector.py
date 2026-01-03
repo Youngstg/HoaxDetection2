@@ -2,6 +2,7 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 import torch
 import os
 from app.models import HoaxPrediction
+from app.services.rule_based_detector import rule_based_detector
 
 class HoaxDetector:
     def __init__(self):
@@ -34,49 +35,55 @@ class HoaxDetector:
             self.model.eval()
             print(f"Model loaded successfully on {self.device}")
 
-    def predict(self, text: str) -> HoaxPrediction:
-        if self.model is None:
-            self.load_model()
+    def predict(self, text: str, source: str = "") -> HoaxPrediction:
+        """
+        Predict hoax dengan fallback ke rule-based detector
 
-        # Tokenize input
-        inputs = self.tokenizer(
-            text,
-            return_tensors="pt",
-            truncation=True,
-            max_length=512,
-            padding=True
-        )
+        Args:
+            text: Konten berita
+            source: Sumber berita (URL atau nama media)
+        """
+        # Try ML model first
+        use_ml_model = os.getenv("USE_ML_MODEL", "false").lower() == "true"
 
-        # Move to device
-        inputs = {k: v.to(self.device) for k, v in inputs.items()}
+        if use_ml_model:
+            if self.model is None:
+                self.load_model()
 
-        # Make prediction
-        with torch.no_grad():
-            try:
-                outputs = self.model(**inputs)
+            # Tokenize input
+            inputs = self.tokenizer(
+                text,
+                return_tensors="pt",
+                truncation=True,
+                max_length=512,
+                padding=True
+            )
 
-                # Check if model has classification head
-                if hasattr(outputs, 'logits'):
-                    logits = outputs.logits
-                    probabilities = torch.softmax(logits, dim=-1)
-                    prediction = torch.argmax(probabilities, dim=-1).item()
-                    confidence = probabilities[0][prediction].item()
+            # Move to device
+            inputs = {k: v.to(self.device) for k, v in inputs.items()}
 
-                    label = "hoax" if prediction == 1 else "non-hoax"
-                else:
-                    # Fallback for base model without classification head
-                    # This is a dummy prediction - replace with actual logic
-                    print("Warning: Model doesn't have classification head. Using dummy prediction.")
-                    label = "non-hoax"
-                    confidence = 0.5
+            # Make prediction
+            with torch.no_grad():
+                try:
+                    outputs = self.model(**inputs)
 
-            except Exception as e:
-                print(f"Error during prediction: {e}")
-                # Return default prediction
-                label = "non-hoax"
-                confidence = 0.5
+                    # Check if model has classification head
+                    if hasattr(outputs, 'logits'):
+                        logits = outputs.logits
+                        probabilities = torch.softmax(logits, dim=-1)
+                        prediction = torch.argmax(probabilities, dim=-1).item()
+                        confidence = probabilities[0][prediction].item()
 
-        return HoaxPrediction(label=label, confidence=round(confidence, 4))
+                        label = "hoax" if prediction == 1 else "non-hoax"
+                        return HoaxPrediction(label=label, confidence=round(confidence, 4))
+                    else:
+                        print("Warning: Model doesn't have classification head. Falling back to rule-based.")
+                except Exception as e:
+                    print(f"Error during ML prediction: {e}. Falling back to rule-based.")
+
+        # Use rule-based detector (default)
+        print("Using rule-based hoax detection")
+        return rule_based_detector.predict(text, source)
 
 # Global instance
 hoax_detector = HoaxDetector()

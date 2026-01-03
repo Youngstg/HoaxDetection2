@@ -10,8 +10,13 @@ class RSSFetcher:
         self.rss_url = rss_url or os.getenv("RSS_FEED_URL", "")
 
     def fetch_rss(self) -> List[Dict]:
+        # Re-read from environment in case it changed
+        if not self.rss_url:
+            self.rss_url = os.getenv("RSS_FEED_URL", "")
+
         if not self.rss_url:
             print("No RSS feed URL configured")
+            print(f"Environment variables: {os.environ.get('RSS_FEED_URL', 'NOT SET')}")
             return []
 
         try:
