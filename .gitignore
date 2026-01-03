@@ -75,9 +75,14 @@ desktop.ini
 .cache/
 models/
 
+# Trained models (too large for GitHub)
+backend/hoax_model/
+hoax_model/
+
 # PyTorch
 *.pth
 *.pt
+*.safetensors
 
 # Jupyter Notebook
 .ipynb_checkpoints/

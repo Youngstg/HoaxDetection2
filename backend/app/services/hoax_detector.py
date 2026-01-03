@@ -7,33 +7,36 @@ from app.services.rule_based_detector import rule_based_detector
 class HoaxDetector:
     def __init__(self):
         self.model_name = os.getenv("MODEL_NAME", "indobenchmark/indobert-base-p1")
+        self.model_path = os.getenv("MODEL_PATH", None)
         self.tokenizer = None
         self.model = None
         self.device = "cuda" if torch.cuda.is_available() else "cpu"
 
     def load_model(self):
         if self.model is None:
-            print(f"Loading model: {self.model_name}")
-            self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
+            # Use trained model if MODEL_PATH is set, otherwise use base model
+            model_to_load = self.model_path if self.model_path else self.model_name
 
-            # Note: For a real implementation, you would need a fine-tuned model
-            # This is a placeholder that loads the base model
-            # You'll need to replace this with your actual fine-tuned hoax detection model
+            print(f"Loading model from: {model_to_load}")
+            print(f"Device: {self.device}")
+
+            self.tokenizer = AutoTokenizer.from_pretrained(model_to_load)
+
             try:
                 self.model = AutoModelForSequenceClassification.from_pretrained(
-                    self.model_name,
+                    model_to_load,
                     num_labels=2  # binary classification: hoax or non-hoax
                 )
-            except:
-                # If the model doesn't have a classification head, use base model
-                # This is just for demo purposes
+                print(f"Fine-tuned model loaded successfully!")
+            except Exception as e:
+                print(f"Error loading model: {e}")
                 print("Warning: Using base model. You need a fine-tuned model for actual hoax detection.")
                 from transformers import AutoModel
                 self.model = AutoModel.from_pretrained(self.model_name)
 
             self.model.to(self.device)
             self.model.eval()
-            print(f"Model loaded successfully on {self.device}")
+            print(f"Model ready on {self.device}")
 
     def predict(self, text: str, source: str = "") -> HoaxPrediction:
         """

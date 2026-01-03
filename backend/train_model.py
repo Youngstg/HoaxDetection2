@@ -233,8 +233,17 @@ class HoaxModelTrainer:
         print("Starting Training")
         print("="*60)
 
+        # Check CUDA
+        device = "cuda" if torch.cuda.is_available() else "cpu"
+        print(f"\n🎮 Device: {device.upper()}")
+        if device == "cuda":
+            print(f"   GPU: {torch.cuda.get_device_name(0)}")
+            print(f"   Memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.1f} GB")
+        else:
+            print(f"   ⚠️  WARNING: CUDA not available, using CPU (will be slow!)")
+
         # Load model
-        print(f"Loading model: {self.model_name}")
+        print(f"\nLoading model: {self.model_name}")
         self.model = AutoModelForSequenceClassification.from_pretrained(
             self.model_name,
             num_labels=2,
@@ -242,10 +251,14 @@ class HoaxModelTrainer:
             label2id={"non-hoax": 0, "hoax": 1}
         )
 
+        # Move model to GPU if available
+        if device == "cuda":
+            self.model = self.model.to(device)
+
         # Training arguments
         training_args = TrainingArguments(
             output_dir=output_dir,
-            eval_strategy="epoch",
+            evaluation_strategy="epoch",
             save_strategy="epoch",
             learning_rate=2e-5,
             per_device_train_batch_size=batch_size,
@@ -257,7 +270,9 @@ class HoaxModelTrainer:
             logging_dir=f"{output_dir}/logs",
             logging_steps=10,
             save_total_limit=2,
-            fp16=torch.cuda.is_available(),  # Use mixed precision if GPU available
+            fp16=torch.cuda.is_available(),
+            no_cuda=False,  # Force use CUDA if available
+            use_cpu=False,  # Don't force CPU
         )
 
         # Create trainer
