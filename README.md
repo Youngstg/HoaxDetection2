@@ -242,36 +242,6 @@ Web scraper mungkin perlu disesuaikan untuk setiap media berbeda. Edit `app/serv
 - [ ] Mobile app
 - [ ] Real-time notifications
 
-### Kontribusi
-Kontribusi sangat diterima! Silakan:
-1. Fork repository
-2. Buat branch fitur (`git checkout -b feature/AmazingFeature`)
-3. Commit changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push ke branch (`git push origin feature/AmazingFeature`)
-5. Buat Pull Request
-
-## TROUBLESHOOTING
-
-### Error: Firebase credentials not found
-- Pastikan file `firebase-credentials.json` ada di folder `backend/`
-- Periksa path di `.env` sudah benar
-
-### Error: ModuleNotFoundError
-```bash
-cd backend
-pip install -r requirements.txt
-```
-
-### Frontend tidak bisa connect ke backend
-- Pastikan backend berjalan di `http://localhost:8000`
-- Periksa `VITE_API_URL` di `frontend/.env`
-- Periksa CORS settings di `backend/app/main.py`
-
-### Model loading error
-- Model akan didownload otomatis saat pertama kali dijalankan
-- Pastikan koneksi internet stabil
-- Memerlukan ~500MB storage untuk model
-
 ## LICENSE
 Proyek ini dibuat untuk keperluan pembelajaran dan portofolio.
 
