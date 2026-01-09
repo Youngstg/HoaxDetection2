@@ -1,0 +1,148 @@
+@startuml HoaxDetection_Architecture_V2
+
+!define RECTANGLE class
+skinparam componentStyle rectangle
+skinparam defaultFontSize 11
+skinparam backgroundColor #FEFEFE
+
+title Hoax Detection News App V2.0 - System Architecture\nWith Admin Labeling & Auto-Retraining
+
+' ==========================================
+' ACTORS
+' ==========================================
+
+actor "Admin" as Admin #FF9800
+actor "User" as User #4CAF50
+actor "Scheduler\n(Cron)" as Cron #9C27B0
+
+' ==========================================
+' FRONTEND
+' ==========================================
+
+package "Frontend (React + Vite)" as FE #E8F5E9 {
+    component "App.jsx" as App
+    component "NewsList.jsx" as NewsList
+    component "NewsCard.jsx" as NewsCard
+    component "api.js (Axios)" as API
+}
+
+' ==========================================
+' BACKEND
+' ==========================================
+
+package "Backend (FastAPI)" as BE #E3F2FD {
+    component "main.py" as Main
+
+    package "Routes" as Routes #BBDEFB {
+        component "news.py\n/api/news/*" as NewsRoute
+        component "admin.py\n/api/admin/*" as AdminRoute #FFE0B2
+        component "checker.py\n/api/checker/*" as CheckerRoute #C8E6C9
+    }
+
+    package "Services" as Services #90CAF9 {
+        component "NewsService" as NewsSvc
+        component "TrainingService" as TrainSvc #FFE0B2
+        component "IncrementalTrainer" as IncTrainer #FFE0B2
+        component "HoaxDetector" as Hoax
+        component "RSSFetcher" as RSS
+        component "RuleBasedDetector" as Rules
+    }
+
+    package "Models" as Models #64B5F6 {
+        component "NewsItem\n+ labeled_by\n+ can_use_for_training\n+ trained" as NewsModel
+        component "AdminLabelRequest" as AdminModel #FFE0B2
+        component "UserCheckRequest" as UserModel #C8E6C9
+    }
+}
+
+' ==========================================
+' SCHEDULER
+' ==========================================
+
+package "Auto-Retrain Scheduler" as SCHED #F3E5F5 {
+    component "auto_retrain_scheduler.py" as AutoRetrain
+    note right of AutoRetrain
+        Checks every 6 hours:
+        1. Count pending admin labels
+        2. If >= 50: trigger retrain
+        3. Use incremental training
+    end note
+}
+
+' ==========================================
+' DATABASE
+' ==========================================
+
+database "Firestore" as DB #FFF3E0 {
+    collections "news\n(labeled_by field)" as NewsCol
+    collections "user_checks\n(NOT for training)" as UserChecksCol
+    collections "training_history" as HistoryCol
+}
+
+' ==========================================
+' ML PIPELINE
+' ==========================================
+
+package "ML Pipeline" as ML #FCE4EC {
+    folder "hoax_model/" as ModelFolder {
+        artifact "model.safetensors" as ModelFile
+    }
+    file "training_data/*.csv" as TrainData
+}
+
+' ==========================================
+' EXTERNAL
+' ==========================================
+
+cloud "RSS Feed" as RSSFeed #ECEFF1
+
+' ==========================================
+' RELATIONSHIPS - ADMIN FLOW
+' ==========================================
+
+Admin -[#FF9800]-> AdminRoute : Label news\n(POST /api/admin/label)
+AdminRoute -[#FF9800]-> NewsSvc : update_news_label()
+NewsSvc -[#FF9800]-> NewsCol : labeled_by="admin"\ncan_use_for_training=true
+
+' ==========================================
+' RELATIONSHIPS - USER FLOW
+' ==========================================
+
+User -[#4CAF50]-> CheckerRoute : Check hoax\n(POST /api/checker/check)
+CheckerRoute -[#4CAF50]-> Hoax : predict()
+CheckerRoute -[#4CAF50,dashed]-> UserChecksCol : Save for analytics\n(NOT for training)
+
+' ==========================================
+' RELATIONSHIPS - AUTO RETRAIN
+' ==========================================
+
+Cron -[#9C27B0]-> AutoRetrain : Every 6 hours
+AutoRetrain -[#9C27B0]-> TrainSvc : check_and_trigger_retrain()
+TrainSvc -[#9C27B0]-> NewsCol : Get pending\n(can_use_for_training=true\ntrained=false)
+TrainSvc -[#9C27B0]-> TrainData : Export CSV
+TrainSvc -[#9C27B0]-> IncTrainer : run_incremental_training()
+IncTrainer -[#9C27B0]-> ModelFolder : Update model
+TrainSvc -[#9C27B0]-> HistoryCol : Save history
+
+' ==========================================
+' RELATIONSHIPS - STANDARD FLOW
+' ==========================================
+
+App --> NewsList
+NewsList --> NewsCard
+App --> API
+API --> NewsRoute
+
+NewsRoute --> NewsSvc
+NewsSvc --> RSS
+NewsSvc --> Hoax
+Hoax --> Rules : fallback
+Hoax --> ModelFolder : inference
+RSS --> RSSFeed
+NewsSvc --> NewsCol
+
+Main --> NewsRoute
+Main --> AdminRoute
+Main --> CheckerRoute
+
+@enduml

@@ -1,0 +1,162 @@
+@startuml HoaxDetection_ML_Flow
+
+!define RECTANGLE class
+skinparam activityBackgroundColor #E3F2FD
+skinparam activityBorderColor #1976D2
+skinparam defaultFontSize 11
+skinparam backgroundColor #FEFEFE
+
+title Hoax Detection Algorithm Flow
+
+|#E8F5E9|Input Processing|
+start
+:Receive article text & source;
+note right
+  Input:
+  - text: str (article content)
+  - source: str (website domain)
+end note
+
+|#E3F2FD|Detection Mode Selection|
+if (USE_ML_MODEL == "true"?) then (yes)
+
+    |#BBDEFB|ML Model Detection|
+    :Load IndoBERT Model;
+    note right
+      Model: indobenchmark/indobert-base-p1
+      Size: ~500MB (fine-tuned)
+      Device: CUDA if available, else CPU
+    end note
+
+    :Tokenize text;
+    note right
+      - Max length: 512 tokens
+      - Truncation: True
+      - Padding: True
+      - Return tensors: "pt"
+    end note
+
+    :Forward pass through model;
+    :Apply softmax to logits;
+    note right
+      logits → probabilities
+      [non-hoax_prob, hoax_prob]
+    end note
+
+    :Get argmax for prediction;
+    if (argmax == 1?) then (yes)
+        :label = "hoax";
+    else (no)
+        :label = "non-hoax";
+    endif
+
+    :confidence = max(probabilities);
+
+else (no)
+
+    |#FFF3E0|Rule-Based Detection|
+    :Initialize scores;
+    note right
+      Total weighted score calculation:
+      - Keyword: 30%
+      - Pattern: 25%
+      - Source: 25%
+      - Caps: 10%
+      - Punctuation: 10%
+    end note
+
+    fork
+        |#FFECB3|Keyword Analysis (30%)|
+        :Check sensational keywords;
+        note right
+          Keywords:
+          - "viral", "breaking news"
+          - "wajib share", "sebarkan"
+          - "mengejutkan", "tidak percaya"
+          - "100% terbukti", "dijamin"
+          - "bahaya", "konspirasi"
+        end note
+        :keyword_score = matches / total_keywords;
+
+    fork again
+        |#FFE0B2|Pattern Analysis (25%)|
+        :Check regex patterns;
+        note right
+          Patterns:
+          - URGENT ALL CAPS
+          - Excessive !!! marks
+          - "BANNED", "CENSORED"
+          - WhatsApp forward markers
+        end note
+        :pattern_score = pattern_matches / total_patterns;
+
+    fork again
+        |#FFCCBC|Source Credibility (25%)|
+        :Check source against trusted list;
+        note right
+          Trusted sources:
+          - kompas.com, detik.com
+          - tempo.co, cnnindonesia.com
+          - bbc.com, reuters.com
+          - liputan6.com, antaranews.com
+        end note
+        if (source in trusted_list?) then (yes)
+            :source_score = 0.0;
+        else (no)
+            :source_score = 0.5;
+        endif
+
+    fork again
+        |#D7CCC8|Capitalization (10%)|
+        :Calculate uppercase ratio;
+        if (uppercase_ratio > 0.3?) then (yes)
+            :caps_score = uppercase_ratio;
+        else (no)
+            :caps_score = 0.0;
+        endif
+
+    fork again
+        |#F5F5F5|Punctuation (10%)|
+        :Count exclamation marks;
+        if (exclamation_count > 3?) then (yes)
+            :punct_score = min(count/10, 1.0);
+        else (no)
+            :punct_score = 0.0;
+        endif
+
+    end fork
+
+    |#FFF3E0|Score Aggregation|
+    :Calculate weighted total;
+    note right
+      total_score =
+        (keyword_score * 0.30) +
+        (pattern_score * 0.25) +
+        (source_score * 0.25) +
+        (caps_score * 0.10) +
+        (punct_score * 0.10)
+    end note
+
+    if (total_score > 0.4?) then (yes)
+        :label = "hoax";
+        :confidence = total_score;
+    else (no)
+        :label = "non-hoax";
+        :confidence = 1.0 - total_score;
+    endif
+
+endif
+
+|#E8F5E9|Output|
+:Return HoaxPrediction;
+note right
+  Output:
+  {
+    "label": "hoax" | "non-hoax",
+    "confidence": 0.0 - 1.0
+  }
+end note
+
+stop
+
+@enduml

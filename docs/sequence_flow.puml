@@ -1,0 +1,166 @@
+@startuml HoaxDetection_Sequence_Flow
+
+!define RECTANGLE class
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam defaultFontSize 11
+skinparam backgroundColor #FEFEFE
+
+title Hoax Detection - Complete Data Flow Sequence
+
+' ==========================================
+' PARTICIPANTS
+' ==========================================
+
+actor User as U #E8F5E9
+participant "Frontend\n(React)" as FE #E8F5E9
+participant "API\n(FastAPI)" as API #E3F2FD
+participant "NewsService" as NS #BBDEFB
+participant "RSSFetcher" as RSS #90CAF9
+participant "HoaxDetector" as HD #64B5F6
+participant "RuleBasedDetector" as RBD #42A5F5
+database "Firestore" as DB #FFF3E0
+collections "RSS Feed" as FEED #FCE4EC
+component "IndoBERT\nModel" as ML #F3E5F5
+
+' ==========================================
+' SEQUENCE 1: INITIAL PAGE LOAD
+' ==========================================
+
+== Initial Page Load ==
+
+U -> FE : Open website
+activate FE
+FE -> FE : useState()\nInitialize state
+FE -> API : GET /api/news/?limit=50
+activate API
+API -> NS : get_all_news(limit=50)
+activate NS
+NS -> DB : query collection("news")\norder by created_at DESC
+activate DB
+DB --> NS : List[Document]
+deactivate DB
+NS --> API : List[NewsResponse]
+deactivate NS
+API --> FE : {total: n, news: [...]}
+deactivate API
+FE -> FE : setNews(data.news)\nRe-render UI
+FE --> U : Display news cards\n(color-coded by hoax label)
+deactivate FE
+
+' ==========================================
+' SEQUENCE 2: FETCH NEW RSS
+' ==========================================
+
+== User Clicks "Fetch New RSS" Button ==
+
+U -> FE : Click "Ambil Berita Terbaru"
+activate FE
+FE -> FE : setFetching(true)\nDisable button
+FE -> API : POST /api/news/fetch-rss
+activate API
+API -> NS : fetch_and_process_rss()
+activate NS
+
+' Step 1: Fetch RSS
+NS -> RSS : fetch_rss()
+activate RSS
+RSS -> FEED : HTTP GET RSS_FEED_URL
+activate FEED
+FEED --> RSS : XML Response
+deactivate FEED
+RSS -> RSS : feedparser.parse()\nExtract entries
+RSS --> NS : List[{title, link, published, summary}]
+deactivate RSS
+
+' Step 2: Process each article
+loop For each article in RSS entries
+
+    ' Check duplicate
+    NS -> NS : generate_id(link)\nMD5 hash
+    NS -> DB : check if exists\nget_document(id)
+    activate DB
+    DB --> NS : exists? true/false
+    deactivate DB
+
+    alt Article already exists
+        NS -> NS : Skip (increment skipped)
+    else Article is new
+        ' Extract content
+        NS -> RSS : extract_article_content(url)
+        activate RSS
+        RSS -> FEED : HTTP GET article URL
+        activate FEED
+        FEED --> RSS : HTML Response
+        deactivate FEED
+        RSS -> RSS : BeautifulSoup parse\nRemove scripts/nav\nExtract <p> tags
+        RSS --> NS : content (max 5000 chars)
+        deactivate RSS
+
+        ' Hoax detection
+        NS -> HD : predict(content, source)
+        activate HD
+
+        alt USE_ML_MODEL = true
+            HD -> ML : load_model()\n(if not loaded)
+            activate ML
+            ML --> HD : model ready
+            HD -> ML : tokenize(text, max=512)
+            ML -> ML : Forward pass\nlogits → softmax
+            ML --> HD : {label, confidence}
+            deactivate ML
+        else USE_ML_MODEL = false (fallback)
+            HD -> RBD : predict(text, source)
+            activate RBD
+            RBD -> RBD : Calculate scores:\n- keyword_score (30%)\n- pattern_score (25%)\n- source_score (25%)\n- caps_score (10%)\n- punct_score (10%)
+            RBD --> HD : HoaxPrediction
+            deactivate RBD
+        end
+
+        HD --> NS : HoaxPrediction\n{label, confidence}
+        deactivate HD
+
+        ' Create and save
+        NS -> NS : Create NewsItem(\n  title, link, content,\n  hoax_label, confidence,\n  source, timestamps\n)
+        NS -> DB : save_news(NewsItem)\ncollection("news").set()
+        activate DB
+        DB --> NS : Success
+        deactivate DB
+        NS -> NS : Increment processed
+    end
+end
+
+NS --> API : {status, message,\nprocessed, skipped, total}
+deactivate NS
+
+API --> FE : JSON Response
+deactivate API
+
+' Refresh news list
+FE -> FE : Show alert(result)
+FE -> API : GET /api/news/?limit=50
+activate API
+API --> FE : Updated news list
+deactivate API
+FE -> FE : setNews()\nsetFetching(false)
+FE --> U : Display updated news\nwith new articles
+deactivate FE
+
+' ==========================================
+' SEQUENCE 3: SCHEDULED UPDATE
+' ==========================================
+
+== Scheduled Update (Cron/GitHub Actions) ==
+
+participant "Scheduler\n(scheduler.py)" as SCHED #FCE4EC
+
+SCHED -> NS : fetch_and_process_rss()
+activate SCHED
+activate NS
+note right: Same process as above\n(RSS fetch → detect → save)
+NS --> SCHED : {processed, skipped}
+deactivate NS
+SCHED -> SCHED : Log results\nExit
+deactivate SCHED
+
+@enduml

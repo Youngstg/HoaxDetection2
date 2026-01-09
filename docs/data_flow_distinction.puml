@@ -1,0 +1,133 @@
+@startuml Data_Flow_Distinction
+
+!define RECTANGLE class
+skinparam defaultFontSize 11
+skinparam backgroundColor #FEFEFE
+
+title Data Flow - Admin vs User vs System\n(Training Data Eligibility)
+
+' ==========================================
+' LEGEND
+' ==========================================
+
+legend right
+    |= Color |= Source |= For Training? |
+    | <#FF9800> | Admin | YES |
+    | <#4CAF50> | User | NO |
+    | <#2196F3> | System (RSS) | NO |
+endlegend
+
+' ==========================================
+' DATA SOURCES
+' ==========================================
+
+package "Data Sources" {
+
+    rectangle "RSS Feed\n(Auto-fetched)" as RSS #2196F3 {
+        note right
+            labeled_by: "system"
+            can_use_for_training: FALSE
+            (Auto-labeled by ML/rules)
+        end note
+    }
+
+    rectangle "Admin Panel\n(Manual Label)" as Admin #FF9800 {
+        note right
+            labeled_by: "admin"
+            can_use_for_training: TRUE
+            is_verified: TRUE
+        end note
+    }
+
+    rectangle "User Checker\n(Public API)" as User #4CAF50 {
+        note right
+            labeled_by: "user"
+            can_use_for_training: FALSE
+            (Stored separately)
+        end note
+    }
+}
+
+' ==========================================
+' DATABASE COLLECTIONS
+' ==========================================
+
+database "Firestore" as DB {
+
+    package "Collection: news" as NewsCol {
+        card "System News\n(labeled_by='system')" as SysNews #2196F3
+        card "Admin Labeled\n(labeled_by='admin')" as AdminNews #FF9800
+    }
+
+    package "Collection: user_checks" as UserCol #4CAF50 {
+        card "User Submissions\n(can_use_for_training=FALSE)" as UserNews #4CAF50
+    }
+
+    package "Collection: training_history" as HistCol {
+        card "Training Logs" as Logs
+    }
+}
+
+' ==========================================
+' TRAINING PIPELINE
+' ==========================================
+
+package "Training Pipeline" as Pipeline #FCE4EC {
+
+    card "Training Queue\nFilter: can_use_for_training=TRUE\nAND trained=FALSE" as Queue
+
+    card "Threshold Check\n(>= 50 samples?)" as Threshold
+
+    card "Export to CSV" as Export
+
+    card "Incremental Training" as Train
+
+    folder "hoax_model/" as Model
+}
+
+' ==========================================
+' CONNECTIONS
+' ==========================================
+
+' Data to DB
+RSS -[#2196F3]-> SysNews : Auto-labeled
+Admin -[#FF9800]-> AdminNews : Manual label
+User -[#4CAF50]-> UserNews : Check only
+
+' Training flow
+AdminNews -[#FF9800,bold]-> Queue : ELIGIBLE
+SysNews -[#2196F3,dashed]-> Queue : NOT ELIGIBLE
+UserNews -[#4CAF50,dashed]-> Queue : NOT ELIGIBLE
+
+Queue -> Threshold
+Threshold -> Export : If >= 50
+Export -> Train
+Train -> Model : Update
+
+Train --> Logs : Save history
+
+' ==========================================
+' SUMMARY BOX
+' ==========================================
+
+note bottom of Pipeline
+    TRAINING DATA RULES:
+    ═══════════════════════════════════
+    ✅ INCLUDED: Admin-labeled data only
+       - labeled_by = "admin"
+       - can_use_for_training = TRUE
+       - is_verified = TRUE
+
+    ❌ EXCLUDED: System auto-labels
+       - labeled_by = "system"
+       - can_use_for_training = FALSE
+       - May contain errors
+
+    ❌ EXCLUDED: User submissions
+       - labeled_by = "user"
+       - can_use_for_training = FALSE
+       - Unverified, potential spam
+    ═══════════════════════════════════
+end note
+
+@enduml

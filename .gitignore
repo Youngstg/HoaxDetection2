@@ -1,7 +1,34 @@
-# Ignore nul file
-nul
+# ==========================================
+# SENSITIVE FILES - NEVER COMMIT THESE!
+# ==========================================
 
-# Python
+# Environment variables (contains secrets!)
+.env
+.env.local
+.env.*.local
+.env.production
+.env.development
+*.env
+
+# Firebase credentials (VERY SENSITIVE!)
+firebase-credentials.json
+*-credentials.json
+*credentials*.json
+serviceAccount*.json
+service-account*.json
+*.pem
+*.key
+
+# API Keys and Secrets
+secrets.json
+secrets.yaml
+secrets.yml
+config.local.json
+config.local.yaml
+
+# ==========================================
+# PYTHON
+# ==========================================
 __pycache__/
 *.py[cod]
 *$py.class
@@ -10,6 +37,7 @@ __pycache__/
 env/
 venv/
 ENV/
+.venv/
 build/
 develop-eggs/
 dist/
@@ -26,72 +54,120 @@ wheels/
 .installed.cfg
 *.egg
 
-# Virtual Environment
-venv/
-env/
-ENV/
-.venv
+# ==========================================
+# ML MODELS (Too large for GitHub)
+# ==========================================
+# Trained model files
+backend/hoax_model/
+hoax_model/
+*.pth
+*.pt
+*.safetensors
+*.bin
+*.h5
+*.onnx
+*.pb
 
-# IDE
-.vscode/
-.idea/
-*.swp
-*.swo
-*~
+# Model checkpoints
+checkpoint*/
+checkpoints/
 
-# Environment variables
-.env
-.env.local
-.env.*.local
+# Training data exports (auto-generated)
+training_data/
+backend/training_data/
 
-# Firebase
-firebase-credentials.json
-*-credentials.json
+# Keep original training datasets but ignore exported ones
+# Data_latih.csv and Data_uji.csv are kept for reproducibility
 
-# Logs
+# HuggingFace cache
+.cache/
+~/.cache/huggingface/
+
+# ==========================================
+# LOGS
+# ==========================================
 *.log
 logs/
+retrain_scheduler.log
+training.log
 
-# Node.js
+# ==========================================
+# NODE.JS / FRONTEND
+# ==========================================
 node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 package-lock.json
 yarn.lock
+.pnpm-store/
 
-# Build
+# Build output
 dist/
 build/
 *.min.js
 *.min.css
+.next/
+out/
 
-# OS
+# ==========================================
+# IDE & EDITORS
+# ==========================================
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+*.sublime-workspace
+*.sublime-project
+.project
+.classpath
+.settings/
+
+# ==========================================
+# OS FILES
+# ==========================================
 .DS_Store
+.DS_Store?
+._*
 Thumbs.db
 desktop.ini
+$RECYCLE.BIN/
+*.lnk
+nul
 
-# Model cache
-.cache/
-models/
-
-# Trained models (too large for GitHub)
-backend/hoax_model/
-hoax_model/
-
-# PyTorch
-*.pth
-*.pt
-*.safetensors
-
-# Jupyter Notebook
-.ipynb_checkpoints/
-
-# Test
+# ==========================================
+# TESTING
+# ==========================================
 .pytest_cache/
 .coverage
 htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+.hypothesis/
 
-# Temporary files
+# ==========================================
+# JUPYTER NOTEBOOK
+# ==========================================
+.ipynb_checkpoints/
+*.ipynb_checkpoints
+
+# ==========================================
+# TEMPORARY FILES
+# ==========================================
 *.tmp
 *.temp
+*.bak
+*.backup
+*.old
+tmp/
+temp/
+
+# ==========================================
+# DATABASE (Local development)
+# ==========================================
+*.db
+*.sqlite
+*.sqlite3

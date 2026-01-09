@@ -1,0 +1,224 @@
+@startuml HoaxDetection_Class_Diagram
+
+!define RECTANGLE class
+skinparam classAttributeIconSize 0
+skinparam defaultFontSize 11
+skinparam backgroundColor #FEFEFE
+
+title Hoax Detection - Class & Service Diagram
+
+' ==========================================
+' PYDANTIC MODELS
+' ==========================================
+
+package "Models (app/models/news.py)" #E8F5E9 {
+
+    class NewsItem <<Pydantic>> {
+        - id: Optional[str]
+        - title: str
+        - link: str
+        - content: str
+        - source: str
+        - published_time: Optional[datetime]
+        - hoax_label: Optional[str]
+        - confidence: Optional[float]
+        - created_at: Optional[datetime]
+        --
+        + class Config
+    }
+
+    class NewsResponse <<Pydantic>> {
+        - id: str
+        - title: str
+        - link: str
+        - content: str
+        - source: str
+        - published_time: Optional[str]
+        - hoax_label: Optional[str]
+        - confidence: Optional[float]
+        - created_at: str
+    }
+
+    class HoaxPrediction <<Pydantic>> {
+        - label: str
+        - confidence: float
+    }
+
+    class NewsListResponse <<Pydantic>> {
+        - total: int
+        - news: List[NewsResponse]
+    }
+
+    NewsItem --> NewsResponse : converts to
+    NewsItem --> HoaxPrediction : uses
+    NewsListResponse o-- NewsResponse : contains
+}
+
+' ==========================================
+' SERVICES
+' ==========================================
+
+package "Services (app/services/)" #E3F2FD {
+
+    class NewsService <<Service>> {
+        - db: firestore.Client
+        - rss_fetcher: RSSFetcher
+        - hoax_detector: HoaxDetector
+        --
+        + get_all_news(limit: int): List[NewsResponse]
+        + get_news_by_id(news_id: str): Optional[NewsResponse]
+        + save_news(news: NewsItem): str
+        + check_news_exists(link: str): bool
+        + fetch_and_process_rss(): Dict
+        - _generate_id(link: str): str
+        - _convert_to_response(doc: dict): NewsResponse
+    }
+
+    class RSSFetcher <<Service>> {
+        - rss_url: str
+        - headers: Dict
+        --
+        + fetch_rss(): List[Dict]
+        + extract_article_content(url: str): str
+        - _parse_entry(entry): Dict
+        - _clean_html(soup: BeautifulSoup): str
+    }
+
+    class HoaxDetector <<Service>> {
+        - model: AutoModelForSequenceClassification
+        - tokenizer: AutoTokenizer
+        - device: torch.device
+        - use_ml: bool
+        --
+        + load_model(): void
+        + predict(text: str, source: str): HoaxPrediction
+        - _ml_predict(text: str): HoaxPrediction
+    }
+
+    class RuleBasedDetector <<Service>> {
+        - sensational_keywords: List[str]
+        - clickbait_phrases: List[str]
+        - hoax_patterns: List[Pattern]
+        - trusted_sources: List[str]
+        --
+        + predict(text: str, source: str): HoaxPrediction
+        - _calculate_keyword_score(text: str): float
+        - _calculate_pattern_score(text: str): float
+        - _calculate_source_score(source: str): float
+        - _calculate_caps_score(text: str): float
+        - _calculate_punct_score(text: str): float
+    }
+
+    NewsService --> RSSFetcher : uses
+    NewsService --> HoaxDetector : uses
+    HoaxDetector --> RuleBasedDetector : fallback to
+}
+
+' ==========================================
+' UTILS
+' ==========================================
+
+package "Utils (app/utils/)" #FFF3E0 {
+
+    class FirebaseConfig <<Utility>> {
+        - _db: firestore.Client
+        - credentials_path: str
+        --
+        + initialize_firebase(): void
+        + get_db(): firestore.Client
+    }
+
+    NewsService --> FirebaseConfig : uses
+}
+
+' ==========================================
+' ROUTES / API
+' ==========================================
+
+package "Routes (app/routes/)" #FCE4EC {
+
+    class NewsRouter <<FastAPI Router>> {
+        --
+        + GET /api/news/
+        + GET /api/news/{news_id}
+        + POST /api/news/fetch-rss
+    }
+
+    NewsRouter --> NewsService : calls
+}
+
+' ==========================================
+' FRONTEND COMPONENTS
+' ==========================================
+
+package "Frontend Components (src/)" #F3E5F5 {
+
+    class App <<React Component>> {
+        - news: List[NewsItem]
+        - loading: boolean
+        - error: string
+        - fetching: boolean
+        --
+        + loadNews(): void
+        + fetchNewNews(): void
+        + render(): JSX
+    }
+
+    class NewsList <<React Component>> {
+        - news: List[NewsItem]
+        - loading: boolean
+        - error: string
+        --
+        + render(): JSX
+    }
+
+    class NewsCard <<React Component>> {
+        - news: NewsItem
+        --
+        + formatDate(date: string): string
+        + getConfidencePercentage(): string
+        + render(): JSX
+    }
+
+    class NewsAPI <<Axios Client>> {
+        - baseURL: string
+        --
+        + getAllNews(limit: int): Promise
+        + getNewsById(id: string): Promise
+        + fetchRSS(): Promise
+    }
+
+    App --> NewsList : renders
+    NewsList --> NewsCard : maps
+    App --> NewsAPI : uses
+    NewsAPI --> NewsRouter : HTTP
+}
+
+' ==========================================
+' EXTERNAL DEPENDENCIES
+' ==========================================
+
+package "External" #ECEFF1 {
+
+    class Firestore <<Google Cloud>> {
+        + collection(name: str)
+        + document(id: str)
+        + set(data: dict)
+        + get()
+    }
+
+    class IndoBERT <<HuggingFace>> {
+        + forward(input_ids, attention_mask)
+        + from_pretrained(path)
+    }
+
+    class RSSFeedSource <<External API>> {
+        + antaranews.com/rss
+    }
+
+    FirebaseConfig --> Firestore
+    HoaxDetector --> IndoBERT
+    RSSFetcher --> RSSFeedSource
+}
+
+@enduml

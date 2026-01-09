@@ -1,0 +1,158 @@
+@startuml HoaxDetection_State_Diagram
+
+!define RECTANGLE class
+skinparam stateBackgroundColor #E3F2FD
+skinparam stateBorderColor #1976D2
+skinparam defaultFontSize 11
+skinparam backgroundColor #FEFEFE
+
+title Hoax Detection - Frontend State Machine
+
+' ==========================================
+' FRONTEND APP STATE
+' ==========================================
+
+state "Frontend Application" as FrontendApp {
+
+    [*] --> Initializing
+
+    state "Initializing" as Initializing #E8F5E9 {
+        Initializing : news = []
+        Initializing : loading = true
+        Initializing : error = null
+        Initializing : fetching = false
+    }
+
+    state "Loading News" as LoadingNews #BBDEFB {
+        LoadingNews : GET /api/news/
+        LoadingNews : Waiting for response...
+    }
+
+    state "News Loaded" as NewsLoaded #C8E6C9 {
+        NewsLoaded : news = [...]
+        NewsLoaded : loading = false
+        NewsLoaded : Display news cards
+    }
+
+    state "Error State" as ErrorState #FFCDD2 {
+        ErrorState : error = "message"
+        ErrorState : loading = false
+        ErrorState : Show error UI
+    }
+
+    state "Empty State" as EmptyState #FFF9C4 {
+        EmptyState : news = []
+        EmptyState : loading = false
+        EmptyState : Show empty message
+    }
+
+    state "Fetching RSS" as FetchingRSS #B3E5FC {
+        FetchingRSS : fetching = true
+        FetchingRSS : POST /api/news/fetch-rss
+        FetchingRSS : Button disabled
+        FetchingRSS : Processing articles...
+    }
+
+    ' Transitions
+    Initializing --> LoadingNews : useEffect\nmounted
+
+    LoadingNews --> NewsLoaded : Success\n(news.length > 0)
+    LoadingNews --> EmptyState : Success\n(news.length == 0)
+    LoadingNews --> ErrorState : Error\n(catch exception)
+
+    NewsLoaded --> FetchingRSS : Click\n"Fetch New RSS"
+    EmptyState --> FetchingRSS : Click\n"Fetch New RSS"
+
+    FetchingRSS --> LoadingNews : Success\nreload news
+    FetchingRSS --> ErrorState : Error
+
+    ErrorState --> LoadingNews : Retry\n(reload page)
+
+    NewsLoaded --> LoadingNews : Refresh\n(manual reload)
+}
+
+' ==========================================
+' BACKEND PROCESSING STATE
+' ==========================================
+
+state "Backend Processing" as BackendProcess {
+
+    [*] --> Idle
+
+    state "Idle" as Idle #E8F5E9 {
+        Idle : Waiting for request...
+    }
+
+    state "Fetching RSS Feed" as FetchRSS #BBDEFB {
+        FetchRSS : Parse RSS XML
+        FetchRSS : Extract entries
+    }
+
+    state "Processing Article" as ProcessArticle #90CAF9 {
+
+        state "Check Duplicate" as CheckDup #FFF3E0
+        state "Extract Content" as Extract #FFE0B2
+        state "Detect Hoax" as Detect #FFCCBC
+        state "Save to DB" as Save #C8E6C9
+
+        [*] --> CheckDup
+        CheckDup --> Extract : Not exists
+        CheckDup --> [*] : Already exists\n(skip)
+        Extract --> Detect : Content extracted
+        Detect --> Save : Prediction done
+        Save --> [*] : Saved
+    }
+
+    state "Returning Result" as ReturnResult #C8E6C9 {
+        ReturnResult : {processed, skipped}
+    }
+
+    Idle --> FetchRSS : POST /fetch-rss
+    FetchRSS --> ProcessArticle : For each article
+    ProcessArticle --> ProcessArticle : Next article
+    ProcessArticle --> ReturnResult : All done
+    ReturnResult --> Idle : Response sent
+}
+
+' ==========================================
+' NEWS ITEM LIFECYCLE
+' ==========================================
+
+state "News Item Lifecycle" as NewsLifecycle {
+
+    [*] --> RSS_Entry
+
+    state "RSS Entry" as RSS_Entry #E8F5E9 {
+        RSS_Entry : title, link, summary
+        RSS_Entry : published_time
+    }
+
+    state "Content Extracted" as ContentExtracted #BBDEFB {
+        ContentExtracted : Full article text
+        ContentExtracted : (max 5000 chars)
+    }
+
+    state "Hoax Analyzed" as HoaxAnalyzed #90CAF9 {
+        HoaxAnalyzed : hoax_label
+        HoaxAnalyzed : confidence score
+    }
+
+    state "Stored in Firestore" as Stored #C8E6C9 {
+        Stored : id (MD5 hash)
+        Stored : created_at timestamp
+        Stored : All fields persisted
+    }
+
+    state "Displayed in Frontend" as Displayed #F3E5F5 {
+        Displayed : NewsCard component
+        Displayed : Color-coded badge
+        Displayed : Confidence %
+    }
+
+    RSS_Entry --> ContentExtracted : HTTP scrape\nBeautifulSoup
+    ContentExtracted --> HoaxAnalyzed : ML/Rule-based\ndetection
+    HoaxAnalyzed --> Stored : Firestore\nset()
+    Stored --> Displayed : GET /api/news\nAxios fetch
+}
+
+@enduml

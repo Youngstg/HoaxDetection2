@@ -1,0 +1,167 @@
+@startuml Auto_Retrain_Flow
+
+!define RECTANGLE class
+skinparam sequenceMessageAlign center
+skinparam responseMessageBelowArrow true
+skinparam defaultFontSize 11
+skinparam backgroundColor #FEFEFE
+
+title Auto-Retrain Flow - Admin Labeling to Model Update
+
+' ==========================================
+' PARTICIPANTS
+' ==========================================
+
+actor Admin as A #FF9800
+participant "Admin API\n/api/admin" as API #FFE0B2
+participant "NewsService" as NS #BBDEFB
+database "Firestore\n(news)" as DB #FFF3E0
+
+actor Scheduler as S #9C27B0
+participant "TrainingService" as TS #F3E5F5
+participant "IncrementalTrainer" as IT #FCE4EC
+collections "training_data/\n*.csv" as CSV
+component "hoax_model/\nmodel.safetensors" as Model #E8F5E9
+
+' ==========================================
+' ADMIN LABELING FLOW
+' ==========================================
+
+== Admin Labels News (Repeated until 50+ samples) ==
+
+A -> API : POST /api/admin/label\n{news_id, label: "hoax"}
+activate API
+API -> NS : update_news_label()
+activate NS
+NS -> DB : UPDATE news SET\nlabeled_by="admin"\ncan_use_for_training=true\ntrained=false
+activate DB
+DB --> NS : Success
+deactivate DB
+NS --> API : Updated
+deactivate NS
+API --> A : {success: true,\ncan_use_for_training: true}
+deactivate API
+
+note over DB
+    Data in Firestore:
+    - labeled_by: "admin"
+    - can_use_for_training: true
+    - trained: false
+    - manual_label: "hoax"
+end note
+
+' ==========================================
+' USER CHECK FLOW (NOT FOR TRAINING)
+' ==========================================
+
+== User Checks News (NOT used for training) ==
+
+actor User as U #4CAF50
+participant "Checker API\n/api/checker" as CAPI #C8E6C9
+database "Firestore\n(user_checks)" as UDB #FFF9C4
+
+U -> CAPI : POST /api/checker/check\n{content: "..."}
+activate CAPI
+CAPI -> Model : predict()
+activate Model
+Model --> CAPI : {label, confidence}
+deactivate Model
+CAPI -> UDB : Save to user_checks\ncan_use_for_training=FALSE
+activate UDB
+UDB --> CAPI : Saved
+deactivate UDB
+CAPI --> U : {prediction: "hoax",\nconfidence: 0.89}
+deactivate CAPI
+
+note over UDB #FFF9C4
+    User checks stored separately
+    NEVER used for training!
+end note
+
+' ==========================================
+' AUTO-RETRAIN FLOW
+' ==========================================
+
+== Auto-Retrain Scheduler (Every 6 Hours) ==
+
+S -> TS : check_and_trigger_retrain()
+activate TS
+
+TS -> DB : COUNT WHERE\ncan_use_for_training=true\nAND trained=false
+activate DB
+DB --> TS : count = 52
+deactivate DB
+
+alt count >= 50 (Threshold Met)
+
+    TS -> TS : Threshold met!\nTriggering retrain...
+
+    ' Export Dataset
+    TS -> DB : SELECT * WHERE\ncan_use_for_training=true
+    activate DB
+    DB --> TS : 52 documents
+    deactivate DB
+
+    TS -> CSV : Export to CSV\ntraining_data_20240115.csv
+    activate CSV
+    CSV --> TS : File saved
+    deactivate CSV
+
+    ' Incremental Training
+    TS -> IT : train(dataset_path)
+    activate IT
+
+    IT -> Model : Load existing model\n(as base)
+    activate Model
+    Model --> IT : Model loaded
+    deactivate Model
+
+    IT -> IT : Fine-tune with new data\n(2 epochs, lower LR)
+
+    IT -> Model : Save updated model
+    activate Model
+    Model --> IT : Saved
+    deactivate Model
+
+    IT --> TS : {success: true,\naccuracy: 0.94,\nf1: 0.92}
+    deactivate IT
+
+    ' Mark as Trained
+    TS -> DB : UPDATE SET trained=true\nWHERE can_use_for_training=true\nAND trained=false
+    activate DB
+    DB --> TS : 52 rows updated
+    deactivate DB
+
+    ' Save History
+    TS -> DB : INSERT training_history\n{samples: 52, accuracy: 0.94}
+    activate DB
+    DB --> TS : Saved
+    deactivate DB
+
+    TS --> S : {success: true,\nsamples_used: 52}
+
+else count < 50 (Threshold NOT Met)
+
+    TS --> S : {success: false,\nmessage: "Need 50, have 32"}
+
+end
+
+deactivate TS
+
+' ==========================================
+' NOTES
+' ==========================================
+
+note right of S
+    Scheduler Options:
+    1. Cron job (every 6h)
+    2. GitHub Actions
+    3. Manual trigger
+end note
+
+note over Model #E8F5E9
+    Model improves over time
+    with admin-verified data!
+end note
+
+@enduml

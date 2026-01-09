@@ -1,0 +1,140 @@
+@startuml HoaxDetection_Deployment
+
+!define RECTANGLE class
+skinparam componentStyle rectangle
+skinparam defaultFontSize 11
+skinparam backgroundColor #FEFEFE
+
+title Hoax Detection - Deployment Architecture
+
+' ==========================================
+' DEVELOPMENT ENVIRONMENT
+' ==========================================
+
+node "Development Environment" as DEV #E8F5E9 {
+
+    node "localhost:5173" as FEDEV {
+        component "Vite Dev Server" as Vite
+        component "React App" as ReactDev
+        Vite --> ReactDev
+    }
+
+    node "localhost:8000" as BEDEV {
+        component "Uvicorn" as Uvicorn
+        component "FastAPI App" as FastAPIDev
+        Uvicorn --> FastAPIDev
+    }
+
+    node "Local Files" as LOCAL {
+        folder "hoax_model/" as ModelFolder {
+            artifact "model.safetensors\n(500MB)" as ModelFile
+            artifact "tokenizer.json" as TokenFile
+        }
+        file ".env" as EnvFile
+        file "firebase-credentials.json" as FirebaseCreds
+    }
+
+    ReactDev --> FastAPIDev : HTTP\n(CORS enabled)
+    FastAPIDev --> ModelFolder : Load model
+    FastAPIDev --> FirebaseCreds : Auth
+}
+
+' ==========================================
+' PRODUCTION ENVIRONMENT
+' ==========================================
+
+cloud "Production Environment" as PROD #E3F2FD {
+
+    node "Vercel" as VERCEL #BBDEFB {
+        component "Static React Build" as ReactProd
+        component "CDN Edge Network" as CDN
+        CDN --> ReactProd
+    }
+
+    node "Google Cloud Run" as CLOUDRUN #90CAF9 {
+        component "Container" as Container {
+            component "FastAPI + Uvicorn" as FastAPIProd
+            component "IndoBERT Model" as ModelProd
+        }
+    }
+
+    node "GitHub Actions" as GHACTIONS #64B5F6 {
+        component "Scheduled Workflow" as Workflow
+        note right of Workflow
+          Cron: "0 */6 * * *"
+          Every 6 hours
+        end note
+    }
+}
+
+' ==========================================
+' EXTERNAL SERVICES
+' ==========================================
+
+cloud "Google Cloud Platform" as GCP #FFF3E0 {
+    database "Cloud Firestore" as Firestore {
+        collections "news" as NewsCollection
+    }
+
+    storage "Secret Manager" as SecretMgr {
+        artifact "Firebase credentials" as ProdCreds
+    }
+}
+
+cloud "External Sources" as EXTERNAL #FCE4EC {
+    component "Antara News RSS" as RSS
+    component "Article Websites" as Websites
+}
+
+cloud "HuggingFace Hub" as HF #F3E5F5 {
+    component "indobert-base-p1" as IndoBERT
+}
+
+' ==========================================
+' CONNECTIONS
+' ==========================================
+
+' Development connections
+FEDEV -[#green]-> BEDEV : API calls\nhttp://localhost:8000/api
+BEDEV -[#blue]-> Firestore : Firestore SDK
+BEDEV -[#orange]-> RSS : feedparser
+BEDEV -[#orange]-> Websites : BeautifulSoup
+
+' Production connections
+VERCEL -[#green]-> CLOUDRUN : HTTPS API
+CLOUDRUN -[#blue]-> Firestore : Firestore SDK
+CLOUDRUN -[#blue]-> SecretMgr : Load credentials
+CLOUDRUN -[#orange]-> RSS : feedparser
+CLOUDRUN -[#orange]-> Websites : HTTP scraping
+GHACTIONS -[#purple]-> CLOUDRUN : Trigger\n/api/news/fetch-rss
+
+' Model loading
+BEDEV -[#red,dashed]-> IndoBERT : Download\n(first run only)
+CLOUDRUN -[#red,dashed]-> IndoBERT : Embedded\nin container
+
+' ==========================================
+' NOTES
+' ==========================================
+
+note bottom of DEV
+  **Development Setup:**
+  - Frontend: npm run dev (Vite)
+  - Backend: uvicorn app.main:app --reload
+  - Model: Local or download from HuggingFace
+end note
+
+note bottom of PROD
+  **Production Setup:**
+  - Frontend: Vercel auto-deploy from GitHub
+  - Backend: Cloud Run with Docker container
+  - Scheduler: GitHub Actions cron job
+end note
+
+note bottom of GCP
+  **Data Storage:**
+  - Firestore: NoSQL document database
+  - Collection: "news"
+  - Credentials: Stored in Secret Manager
+end note
+
+@enduml
